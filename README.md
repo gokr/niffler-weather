@@ -59,7 +59,10 @@ niffler.json        # package manifest (required)
   your repo.
 - Tag releases (`v1.0.0`) so installs pin to them; the included workflow
   cross-builds release assets named `<component>-<os>-<arch>` so hosts
-  without Nim/Go get prebuilt binaries.
+  without Nim/Go get prebuilt binaries. Currently prebuilt assets ship for
+  Linux x86-64 (`weather-linux-amd64`); other platforms install from
+  source via the harness's `builder` (a Niffler install already has
+  nats.c, libclang and the SDK deps).
 
 Components are plain Niffler components — the SDK pattern is in
 [Niffler's README](https://github.com/gokr/niffler#writing-a-component).
