@@ -11,10 +11,10 @@ From a running Niffler harness, just say:
 > Install the package `gokr/niffler-weather`
 
 The agent's `plugins` component searches GitHub (`topic:niffler-component`),
-clones this repo, downloads a prebuilt binary for your platform from the
-latest release (or compiles from source via the `builder` component), and
-spawns it — the tools appear in the conversation immediately and come back
-on every boot. Each spawn is human-approved.
+clones this repo and compiles it from source via the `builder` component
+using your own toolchain, then spawns it — the tools appear in the
+conversation immediately and come back on every boot. Each spawn is
+human-approved.
 
 Two new tools:
 
@@ -35,8 +35,8 @@ This repo is the layout convention:
 niffler.json        # package manifest (required)
 <comp>/main.nim     # one directory per component (Nim)
 <comp>/main.go      # ... or Go
-.github/workflows/  # optional: build release assets so installs need
-                    # no toolchain on the user's machine
+.github/workflows/  # optional: compile-check the package in CI; no binaries
+                    # are published — installs always build from source
 ```
 
 `niffler.json`:
@@ -61,10 +61,10 @@ niffler.json        # package manifest (required)
   then *verifies the package by running Niffler itself*: it boots a fresh
   harness, installs the package through `plugin_install` over the bus and
   calls the weather tool — so every release tag proves the package
-  installs cleanly on Linux. Installs always compile from source via the
-  harness's `builder` (running Niffler already provides Nim, nats.c and
-  the SDK deps on the user's machine), so every platform builds with its
-  own toolchain.
+  compiles and installs cleanly on Linux, and every PR gets the compile
+  check. It publishes no binaries: each install compiles from source via
+  the harness's `builder`, so every platform builds with its own
+  toolchain.
 
 Components are plain Niffler components — the SDK pattern is in
 [Niffler's README](https://github.com/gokr/niffler#writing-a-component).

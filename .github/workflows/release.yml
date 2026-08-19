@@ -1,25 +1,26 @@
-name: release
+name: verify
 
-# Dogfooding CI: builds and verifies this component the way a real Niffler
-# install does — by running the harness itself (core + builder + plugins)
-# and driving plugin_install over the bus. The binary the builder produced
-# is uploaded as a release asset (informational; the plugins component
-# always builds from source at install time).
+# Verifies this package the way a real Niffler install does — by running
+# the harness itself (core + builder + plugins) and driving plugin_install
+# over the bus, which compiles every component from source through the
+# builder component and spawns it. No binaries are published: installs
+# always build from source with the user's own toolchain.
+#
+# Runs on every PR (compile check only) and on tag pushes (full install
+# through the harness, since plugin_install pins the tagged ref).
 
 on:
   push:
     tags: ["v*"]
-
-permissions:
-  contents: write
-
-env:
-  LIBRARY_PATH: /Library/Developer/CommandLineTools/usr/lib
+  pull_request:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: weather
       - uses: actions/checkout@v4
         with:
           repository: gokr/niffler
@@ -38,13 +39,17 @@ jobs:
           sudo cmake --install /tmp/nats.c/build
           echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/libnats.conf >/dev/null
           sudo ldconfig
-          go install github.com/nats-io/nats-server/v2@latest
-          sudo cp "$HOME/go/bin/nats-server" /usr/local/bin/
           cd niffler && nimble install -y -d
+      - name: Compile check (every PR and tag)
+        run: |
+          nim c --hints:off -d:release --path:niffler/sdk \
+            -o:/tmp/weather-check weather/weather/main.nim
       - name: Build the harness
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: niffler
         run: make build
       - name: Install the package through the harness itself
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: niffler
         env:
           NIF_WEATHER_REF: ${{ github.ref_name }}
@@ -98,10 +103,3 @@ jobs:
           RC=$?
           kill $CORE_PID 2>/dev/null; wait $CORE_PID 2>/dev/null
           exit $RC
-      - name: Upload release asset
-        run: |
-          mkdir -p dist
-          cp niffler/var/bin/weather dist/weather-linux-amd64
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
