@@ -44,6 +44,13 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo apt-get update && sudo apt-get install -y libclang-dev
           fi
+          # natswrapper wraps the native nats.c library (futhark): build it
+          git clone --depth 1 https://github.com/nats-io/nats.c /tmp/nats.c
+          cmake -S /tmp/nats.c -B /tmp/nats.c/build \
+            -DNATS_BUILD_WITH_TLS=OFF -DNATS_BUILD_STREAMING=OFF \
+            -DNATS_BUILD_EXAMPLES=OFF -DNATS_BUILD_LIB_ONLY=ON
+          cmake --build /tmp/nats.c/build -j2
+          sudo cmake --install /tmp/nats.c/build
           nimble install -y -d
       - name: Build component
         working-directory: niffler
