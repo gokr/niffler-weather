@@ -57,12 +57,14 @@ niffler.json        # package manifest (required)
 - To make the package discoverable, add the GitHub topic
   [`niffler-component`](https://github.com/topics/niffler-component) to
   your repo.
-- Tag releases (`v1.0.0`) so installs pin to them; the included workflow
-  cross-builds release assets named `<component>-<os>-<arch>` so hosts
-  without Nim/Go get prebuilt binaries. Currently prebuilt assets ship for
-  Linux x86-64 (`weather-linux-amd64`); other platforms install from
-  source via the harness's `builder` (a Niffler install already has
-  nats.c, libclang and the SDK deps).
+- Tag releases (`v1.0.0`) so installs pin to them. The included workflow
+  then *verifies the package by running Niffler itself*: it boots a fresh
+  harness, installs the package through `plugin_install` over the bus and
+  calls the weather tool — so every release tag proves the package
+  installs cleanly on Linux. Installs always compile from source via the
+  harness's `builder` (running Niffler already provides Nim, nats.c and
+  the SDK deps on the user's machine), so every platform builds with its
+  own toolchain.
 
 Components are plain Niffler components — the SDK pattern is in
 [Niffler's README](https://github.com/gokr/niffler#writing-a-component).

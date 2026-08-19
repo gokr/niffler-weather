@@ -1,8 +1,10 @@
 name: release
 
-# Builds prebuilt component binaries for tagged releases so installs don't
-# need a Nim/Go toolchain: assets are named <component>-<hostOS>-<hostCPU>,
-# exactly what the plugins component looks for.
+# Dogfooding CI: builds and verifies this component the way a real Niffler
+# install does — by running the harness itself (core + builder + plugins)
+# and driving plugin_install over the bus. The binary the builder produced
+# is uploaded as a release asset (informational; the plugins component
+# always builds from source at install time).
 
 on:
   push:
@@ -11,8 +13,6 @@ on:
 permissions:
   contents: write
 
-# futhark (natswrapper's C-header wrapper) needs libclang at link time:
-# Xcode CLT provides it on macOS runners.
 env:
   LIBRARY_PATH: /Library/Developer/CommandLineTools/usr/lib
 
@@ -21,36 +21,76 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # the SDK + nimble deps live in the harness repo; build from its
-      # root so niffler's config.nims resolves the package paths
-      - uses: actions/checkout@v4
         with:
           repository: gokr/niffler
           path: niffler
       - uses: jiro4989/setup-nim-action@v2
         with:
           nim-version: stable
-      - name: Install SDK dependencies
-        working-directory: niffler
+      - name: System deps (what a real Niffler install needs)
         run: |
           sudo apt-get update && sudo apt-get install -y libclang-dev
-          # natswrapper wraps the native nats.c library (futhark): build it
           git clone --depth 1 https://github.com/nats-io/nats.c /tmp/nats.c
           cmake -S /tmp/nats.c -B /tmp/nats.c/build \
             -DNATS_BUILD_WITH_TLS=OFF -DNATS_BUILD_STREAMING=OFF \
             -DNATS_BUILD_EXAMPLES=OFF -DNATS_BUILD_LIB_ONLY=ON
           cmake --build /tmp/nats.c/build -j2
           sudo cmake --install /tmp/nats.c/build
-          # only natswrapper — the component never touches bitbarrel/lz4
-          nimble install -y https://github.com/gokr/natswrapper
-      - name: Build component
+          go install github.com/nats-io/nats-server/v2@latest
+          cd niffler && nimble install -y -d
+      - name: Build the harness
         working-directory: niffler
+        run: make build
+      - name: Install the package through the harness itself
+        working-directory: niffler
+        env:
+          NIF_WEATHER_REF: ${{ github.ref_name }}
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/dist"
-          nim c --hints:off -d:release --path:sdk \
-            -o:"$GITHUB_WORKSPACE/dist/weather-linux-amd64" \
-            "$GITHUB_WORKSPACE/weather/main.nim"
+          NIF_AUTO_APPROVE=1 ./var/bin/niffler </dev/null >core.log 2>&1 &
+          CORE_PID=$!
+          for i in $(seq 1 60); do [ -f var/nats-url ] && break; sleep 1; done
+          cat > /tmp/ci-install.nim <<'EOF'
+          import std/[json, os]
+          import natswrapper
+          import niffler/sdk
+          var nc = connect(getEnv("NIF_NATS_URL"))
+          proc call(compName, tool: string, args: JsonNode,
+                    timeoutMs: int): JsonNode =
+            let data = callEnvelope(tool, args).encode()
+            var msg: ptr natsMsg
+            let st = natsConnection_Request(addr msg, nc.conn,
+              ("svc." & compName & ".call").cstring, data.cstring,
+              data.len.cint, timeoutMs.int64 * 1_000_000)
+            if st == NATS_TIMEOUT: return %*{"error": "timeout"}
+            doAssert checkStatus(st)
+            let r = decode($natsMsg_GetData(msg))
+            natsMsg_Destroy(msg)
+            if r.kind == ekError: return %*{"error": r.error{"message"}}
+            return r.args
+          let inst = call("plugins", "plugin_install",
+            %*{"repo": "gokr/niffler-weather",
+               "version": getEnv("NIF_WEATHER_REF")}, 600_000)
+          echo "install: ", $inst
+          if not inst{"ok"}.getBool(false): quit(1)
+          var w = %*{}
+          for i in 0 ..< 15:
+            w = call("weather", "weather_current", %*{"place": "Gothenburg"}, 5_000)
+            if w{"error"} == nil: break
+            sleep(1000)
+          echo "weather: ", $w
+          if w{"error"} != nil: quit(1)
+          echo "CI INSTALL OK"
+          EOF
+          export NIF_NATS_URL=$(cat var/nats-url)
+          nim c --hints:off --path:sdk -o:/tmp/ci-install /tmp/ci-install.nim
+          /tmp/ci-install
+          RC=$?
+          kill $CORE_PID 2>/dev/null; wait $CORE_PID 2>/dev/null
+          exit $RC
       - name: Upload release asset
-        uses: softprops/action-gh-release@v2
+        run: |
+          mkdir -p dist
+          cp niffler/var/bin/weather dist/weather-linux-amd64
+      - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
