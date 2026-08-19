@@ -68,11 +68,16 @@ jobs:
               ("svc." & compName & ".call").cstring, data.cstring,
               data.len.cint, timeoutMs.int64 * 1_000_000)
             if st == NATS_TIMEOUT: return %*{"error": "timeout"}
-            doAssert checkStatus(st)
+            if not checkStatus(st): return %*{"error": "nats " & $st}
             let r = decode($natsMsg_GetData(msg))
             natsMsg_Destroy(msg)
             if r.kind == ekError: return %*{"error": r.error{"message"}}
             return r.args
+          # wait for the plugins component to register
+          for i in 0 ..< 60:
+            let p = call("plugins", "plugin_installed", %*{}, 5_000)
+            if p{"error"} == nil: break
+            sleep(1000)
           let inst = call("plugins", "plugin_install",
             %*{"repo": "gokr/niffler-weather",
                "version": getEnv("NIF_WEATHER_REF")}, 600_000)
