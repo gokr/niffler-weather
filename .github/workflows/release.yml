@@ -1,10 +1,11 @@
 name: verify
 
 # Verifies this package the way a real Niffler install does — by running
-# the harness itself (core + builder + plugins) and driving plugin_install
-# over the bus, which compiles every component from source through the
-# builder component and spawns it. No binaries are published: installs
-# always build from source with the user's own toolchain.
+# the harness itself (core + builder + plugins + cli) and driving it with
+# the cli component: `cli install` compiles every component from source
+# through the builder and spawns it, then `cli call` proves the tools
+# work. No binaries are published: installs always build from source
+# with the user's own toolchain.
 #
 # Runs on every PR (compile check only) and on tag pushes (full install
 # through the harness, since plugin_install pins the tagged ref).
@@ -60,46 +61,16 @@ jobs:
           if [ ! -f var/nats-url ]; then
             echo "harness failed to start:"; tail -20 core.log; exit 1
           fi
-          cat > /tmp/ciinstall.nim <<'EOF'
-          import std/[json, os]
-          import natswrapper
-          import niffler/sdk
-          var nc = connect(getEnv("NIF_NATS_URL"))
-          proc call(compName, tool: string, args: JsonNode,
-                    timeoutMs: int): JsonNode =
-            let data = callEnvelope(tool, args).encode()
-            var msg: ptr natsMsg
-            let st = natsConnection_Request(addr msg, nc.conn,
-              ("svc." & compName & ".call").cstring, data.cstring,
-              data.len.cint, timeoutMs.int64 * 1_000_000)
-            if st == NATS_TIMEOUT: return %*{"error": "timeout"}
-            if not checkStatus(st): return %*{"error": "nats " & $st}
-            let r = decode($natsMsg_GetData(msg))
-            natsMsg_Destroy(msg)
-            if r.kind == ekError: return %*{"error": r.error{"message"}}
-            return r.args
-          # wait for the plugins component to register
-          for i in 0 ..< 60:
-            let p = call("plugins", "plugin_installed", %*{}, 5_000)
-            if p{"error"} == nil: break
-            sleep(1000)
-          let inst = call("plugins", "plugin_install",
-            %*{"repo": "gokr/niffler-weather",
-               "version": getEnv("NIF_WEATHER_REF")}, 600_000)
-          echo "install: ", $inst
-          if not inst{"ok"}.getBool(false): quit(1)
-          var w = %*{}
-          for i in 0 ..< 15:
-            w = call("weather", "weather_current", %*{"place": "Gothenburg"}, 5_000)
-            if w{"error"} == nil: break
-            sleep(1000)
-          echo "weather: ", $w
-          if w{"error"} != nil: quit(1)
-          echo "CI INSTALL OK"
-          EOF
           export NIF_NATS_URL=$(cat var/nats-url)
-          nim c --hints:off --path:sdk -o:/tmp/ci-install /tmp/ciinstall.nim
-          /tmp/ci-install
-          RC=$?
+          set -e
+          # preferred plugin CI: drive Niffler itself via the cli component
+          ./var/bin/cli install gokr/niffler-weather@$NIF_WEATHER_REF
+          # validate the tools the spawned weather component registered
+          ./var/bin/cli catalog | grep -q weather_current
+          ./var/bin/cli catalog | grep -q weather_forecast
+          ./var/bin/cli call weather_current '{"place":"Gothenburg"}' |
+            grep -q '"temperatureC"'
+          ./var/bin/cli call weather_forecast '{"place":"Stockholm","days":2}' |
+            grep -q '"forecast"'
+          echo "CI VERIFY OK"
           kill $CORE_PID 2>/dev/null; wait $CORE_PID 2>/dev/null
-          exit $RC
