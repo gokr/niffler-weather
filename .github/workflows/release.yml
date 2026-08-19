@@ -39,6 +39,7 @@ jobs:
           echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/libnats.conf >/dev/null
           sudo ldconfig
           go install github.com/nats-io/nats-server/v2@latest
+          sudo cp "$HOME/go/bin/nats-server" /usr/local/bin/
           cd niffler && nimble install -y -d
       - name: Build the harness
         working-directory: niffler
