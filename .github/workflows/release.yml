@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# futhark (natswrapper's C-header wrapper) needs libclang at link time:
+# Xcode CLT provides it on macOS runners.
+env:
+  LIBRARY_PATH: /Library/Developer/CommandLineTools/usr/lib
+
 jobs:
   build:
     strategy:
@@ -35,7 +40,11 @@ jobs:
           nim-version: stable
       - name: Install SDK dependencies
         working-directory: niffler
-        run: nimble install -y -d
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libclang-dev
+          fi
+          nimble install -y -d
       - name: Build component
         working-directory: niffler
         run: |
