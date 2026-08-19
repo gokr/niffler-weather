@@ -49,7 +49,7 @@ jobs:
           NIF_AUTO_APPROVE=1 ./var/bin/niffler </dev/null >core.log 2>&1 &
           CORE_PID=$!
           for i in $(seq 1 60); do [ -f var/nats-url ] && break; sleep 1; done
-          cat > /tmp/ci-install.nim <<'EOF'
+          cat > /tmp/ciinstall.nim <<'EOF'
           import std/[json, os]
           import natswrapper
           import niffler/sdk
@@ -82,7 +82,7 @@ jobs:
           echo "CI INSTALL OK"
           EOF
           export NIF_NATS_URL=$(cat var/nats-url)
-          nim c --hints:off --path:sdk -o:/tmp/ci-install /tmp/ci-install.nim
+          nim c --hints:off --path:sdk -o:/tmp/ci-install /tmp/ciinstall.nim
           /tmp/ci-install
           RC=$?
           kill $CORE_PID 2>/dev/null; wait $CORE_PID 2>/dev/null
