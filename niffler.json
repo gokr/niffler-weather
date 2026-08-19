@@ -1,0 +1,14 @@
+{
+  "name": "niffler-weather",
+  "version": "0.1.0",
+  "description": "Current weather and forecast for any place on Earth, via Open-Meteo. No API key needed.",
+  "license": "MIT",
+  "components": [
+    {
+      "name": "weather",
+      "lang": "nim",
+      "main": "weather/main.nim",
+      "description": "Current weather and forecast via Open-Meteo (no API key)"
+    }
+  ]
+}

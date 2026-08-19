@@ -1,0 +1,49 @@
+name: release
+
+# Builds prebuilt component binaries for tagged releases so installs don't
+# need a Nim/Go toolchain: assets are named <component>-<hostOS>-<hostCPU>,
+# exactly what the plugins component looks for.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: weather-linux-amd64
+          - os: macos-latest
+            asset: weather-macosx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # the SDK + nimble deps live in the harness repo; build from its
+      # root so niffler's config.nims resolves the package paths
+      - uses: actions/checkout@v4
+        with:
+          repository: gokr/niffler
+          path: niffler
+      - uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: stable
+      - name: Install SDK dependencies
+        working-directory: niffler
+        run: nimble install -y -d
+      - name: Build component
+        working-directory: niffler
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          nim c --hints:off -d:release --path:sdk \
+            -o:"$GITHUB_WORKSPACE/dist/${{ matrix.asset }}" \
+            "$GITHUB_WORKSPACE/weather/main.nim"
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
