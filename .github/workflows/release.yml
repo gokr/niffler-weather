@@ -36,6 +36,8 @@ jobs:
             -DNATS_BUILD_EXAMPLES=OFF -DNATS_BUILD_LIB_ONLY=ON
           cmake --build /tmp/nats.c/build -j2
           sudo cmake --install /tmp/nats.c/build
+          echo /usr/local/lib | sudo tee /etc/ld.so.conf.d/libnats.conf >/dev/null
+          sudo ldconfig
           go install github.com/nats-io/nats-server/v2@latest
           cd niffler && nimble install -y -d
       - name: Build the harness
@@ -49,6 +51,9 @@ jobs:
           NIF_AUTO_APPROVE=1 ./var/bin/niffler </dev/null >core.log 2>&1 &
           CORE_PID=$!
           for i in $(seq 1 60); do [ -f var/nats-url ] && break; sleep 1; done
+          if [ ! -f var/nats-url ]; then
+            echo "harness failed to start:"; tail -20 core.log; exit 1
+          fi
           cat > /tmp/ciinstall.nim <<'EOF'
           import std/[json, os]
           import natswrapper
